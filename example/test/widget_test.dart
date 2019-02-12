@@ -11,17 +11,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_my_native_example/main.dart';
 
 void main() {
-  testWidgets('Verify Platform version', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(MyApp());
-
-    // Verify that platform version is retrieved.
-    expect(
-      find.byWidgetPredicate(
-        (Widget widget) => widget is Text &&
-                           widget.data.startsWith('Running on:'),
-      ),
-      findsOneWidget,
-    );
+  test('Verify Platform version', () async {
+    final a = Uri.parse("pinduoduo://com.xunmeng.pinduoduo/goods.html?goods_id=6051&direct_switch_from_wechat=1&_p_utm=other_");
+    print(a.host);
   });
 }
