@@ -30,6 +30,8 @@ class FlutterMyNative {
       const MethodChannel('cn.cnganen.flutter_my_native');
   static const EventChannel _eventChannel =
   const EventChannel('cn.cnganen.flutter_my_native.qiniu_upload_event');
+  static const EventChannel _eventDeeplinkChannel =
+  const EventChannel('cn.cnganen.flutter_my_native.deeplink');
 
   static Future<String> goToHome() async {
     assert(Platform.isAndroid, "回到桌面只支持android");
@@ -92,18 +94,61 @@ class FlutterMyNative {
   }
 }
 
+class Deeplink {
+  List<ValueChanged<String>> _eventCallback = List<ValueChanged<String>>();
+  static Deeplink _cache;
+  factory Deeplink (){
+    if (Deeplink._cache == null) {
+      Deeplink._cache = Deeplink._();
+    }
+    return Deeplink._cache;
+  }
+
+  Deeplink._(){
+    final _onChanged = FlutterMyNative._eventDeeplinkChannel.receiveBroadcastStream();
+    _onChanged.listen((data){
+      if (data["uri"] != null) {
+        _eventCallback.forEach((v) => v(data["uri"] + "#" + data["fragment"]));
+      }
+    });
+  }
+
+  static Future<String> getInitialLink() async {
+    final ret = await FlutterMyNative._channel.invokeMethod("getInitialLink");
+      if (ret != null) {
+        final retMap = Map<String, String>.from(ret);
+        if (retMap.containsKey("uri")) {
+          return retMap["uri"] + "#" + (retMap["fragment"] ?? "");
+        }
+      }
+      return null;
+  }
+
+  addEventCallback(ValueChanged<String> call) {
+    _eventCallback.add(call);
+  }
+
+  removeEventCallback(ValueChanged<String> call) {
+    _eventCallback.remove(call);
+  }
+
+  void dispose() {
+    _eventCallback = [];
+  }
+}
+
 class Qiniu {
   static Stream _onChanged;
   static Map<String, StreamController> _cache;
   Qiniu() {
-    _cache = Map<String, StreamController>();
+    Qiniu._cache = Map<String, StreamController>();
     if (_onChanged == null) {
       _onChanged = FlutterMyNative._eventChannel.receiveBroadcastStream();
       _onChanged.listen((data){
         print(data);
-        if (_cache != null && data["key"] && _cache.containsKey(data["key"])) {
-          if (_cache[data["key"]].isClosed == false) {
-            _cache[data["key"]].add(data['percent']);
+        if (Qiniu._cache != null && data["key"] && Qiniu._cache.containsKey(data["key"])) {
+          if (Qiniu._cache[data["key"]].isClosed == false) {
+            Qiniu._cache[data["key"]].add(data['percent']);
           }
         }
       });
@@ -111,15 +156,15 @@ class Qiniu {
   }
   List<String> _keys = [];
   Stream addOnChange(String key) {
-    _cache[key] = StreamController();
+    Qiniu._cache[key] = StreamController();
     _keys.add(key);
-    return _cache[key].stream;
+    return Qiniu._cache[key].stream;
   }
 
   void dispose() {
     _keys.forEach((item){
-      _cache[item].close();
-      _cache.remove(item);
+      Qiniu._cache[item].close();
+      Qiniu._cache.remove(item);
     });
   }
 
