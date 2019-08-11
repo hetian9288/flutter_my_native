@@ -9,6 +9,7 @@ import android.graphics.Matrix;
 import android.net.Uri;
 import android.provider.MediaStore;
 import android.provider.MediaStore.Images;
+import android.util.Log;
 
 import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
@@ -77,6 +78,7 @@ public class CapturePhotoUtils {
                 url = null;
             }
         } catch (Exception e) {
+            Log.e("CapturePhotoUtils", "insertImage: " + e.toString(), null);
             if (url != null) {
                 cr.delete(url, null, null);
                 url = null;

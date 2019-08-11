@@ -8,11 +8,20 @@ import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Message;
 import android.util.Log;
 
 
+import com.alipay.sdk.app.AuthTask;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
 
@@ -35,21 +44,22 @@ public class FlutterMyNativePlugin implements MethodCallHandler, EventChannel.St
   private final QiniuUpload qiniuUpload;
   private BroadcastReceiver receiver;
   private String DeeplinkFilter = "deeplinkFilter";
-  private HashMap<String, String> initialLink;
+  static public HashMap<String, String> initialLink;
+  static private FlutterMyNativePlugin myNativePlugin;
   Registrar registrar;
   /** Plugin registration. */
   public static void registerWith(Registrar registrar) {
-    final FlutterMyNativePlugin plugin = new FlutterMyNativePlugin(registrar, new QiniuUpload(registrar));
+    myNativePlugin = new FlutterMyNativePlugin(registrar, new QiniuUpload(registrar));
     final MethodChannel channel = new MethodChannel(registrar.messenger(), "cn.cnganen.flutter_my_native");
-    channel.setMethodCallHandler(plugin);
+    channel.setMethodCallHandler(myNativePlugin);
 
     EventChannel eventChannel = new EventChannel(registrar.messenger(), "cn.cnganen.flutter_my_native.qiniu_upload_event");
-    eventChannel.setStreamHandler(plugin.qiniuUpload);
+    eventChannel.setStreamHandler(myNativePlugin.qiniuUpload);
 
     EventChannel linkChannel = new EventChannel(registrar.messenger(), "cn.cnganen.flutter_my_native.deeplink");
-    linkChannel.setStreamHandler(plugin);
+    linkChannel.setStreamHandler(myNativePlugin);
 
-    registrar.addNewIntentListener(plugin);
+    registrar.addNewIntentListener(myNativePlugin);
   }
 
   @Override
@@ -124,6 +134,9 @@ public class FlutterMyNativePlugin implements MethodCallHandler, EventChannel.St
       case "cancelUpload":
         qiniuUpload.cancelUpload(result);
         break;
+      case "alipayAuto":
+        alipayAuto(call, result);
+        break;
       case "getInitialLink":
         getInitialLink(call, result);
         break;
@@ -154,26 +167,89 @@ public class FlutterMyNativePlugin implements MethodCallHandler, EventChannel.St
     }
   }
 
+  void alipayAuto(MethodCall call, final Result result) {
+    final String authInfo = call.argument("authInfo");
+    if (authInfo.isEmpty()) {
+      result.error("error", "authInfo 参数必传", null);
+      return;
+    }
+    Runnable authRunnable = new Runnable() {
+
+      @Override
+      public void run() {
+        // 构造AuthTask 对象
+        AuthTask authTask = new AuthTask(registrar.activity());
+        // 调用授权接口，获取授权结果
+        Map<String, String> ret = authTask.authV2(authInfo, true);
+
+        result.success(ret);
+      }
+    };
+
+    // 必须异步调用
+    Thread authThread = new Thread(authRunnable);
+    authThread.start();
+  }
+
   /**
    * 保存图片
    * @param methodCall
    * @param result
    */
-  public void saveImageToGallery(MethodCall methodCall, Result result) throws IOException {
+  public void saveImageToGallery(MethodCall methodCall, final Result result) throws IOException {
 
     if (!permissionManager.isPermissionGranted(Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
       permissionManager.askForPermission(
               Manifest.permission.WRITE_EXTERNAL_STORAGE, FLUTTER_REQUEST_EXTERNAL_IMAGE_STORAGE_PERMISSION);
       return;
     }
-    byte[] fileData = methodCall.argument("fileData");
-    String title = methodCall.argument("title");
-    String desc = methodCall.argument("desc");
+    final byte[] fileData = methodCall.argument("fileData");
+    final String filePath = methodCall.argument("filePath"); // 图片路径方式
+    final String title = methodCall.argument("title");
+    final String desc = methodCall.argument("desc");
 
-    //Bitmap bitmap = BitmapFactory.decodeByteArray(fileData, 0, fileData.length);
+    // Bitmap bitmap = BitmapFactory.decodeByteArray(fileData, 0, fileData.length);
+    new Thread(new Runnable() {
+      @Override
+      public void run() {
+        String newPath = null;
+        try {
+          byte[] data = new byte[1024];
+          // 优先使用路径方式
+          if (filePath != null && !filePath.isEmpty()) {
+            File file = new File(filePath);
+            if (!file.exists()) {
+              result.error("fail", "文件不存在", null);
+              return;
+            }
+            FileInputStream inputStream = new FileInputStream(file);
+            data = readStream(inputStream);
+          } else if (fileData != null) {
+            data = fileData;
+          }
+          newPath = CapturePhotoUtils.insertImage(registrar.activity().getContentResolver(), data, title, desc);
+        } catch (IOException e) {
+          result.error("fail", e.getLocalizedMessage(), null);
+          return;
+        } catch (Exception e) {
+          e.printStackTrace();
+        }
+        result.success(newPath);
+      }
+    }).run();
+  }
 
-    String filePath = CapturePhotoUtils.insertImage(registrar.activity().getContentResolver(), fileData, title, desc);
-    result.success(filePath);
+  public byte[] readStream(InputStream inStream) throws Exception {
+    byte[] buffer = new byte[1024];
+    int len = -1;
+    ByteArrayOutputStream outStream = new ByteArrayOutputStream();
+    while ((len = inStream.read(buffer)) != -1) {
+      outStream.write(buffer, 0, len);
+    }
+    byte[] data = outStream.toByteArray();
+    outStream.close();
+    inStream.close();
+    return data;
   }
 
 
@@ -188,13 +264,13 @@ public class FlutterMyNativePlugin implements MethodCallHandler, EventChannel.St
     return false;
   }
 
-  private void deeplink(Intent intent) {
+  static public void deeplink(Intent intent) {
     Log.i("deeplink", "deeplink: " + "---->init");
     checkForLinkEvent(intent);
     checkForPushEvent(intent);
   }
 
-  private void checkForLinkEvent(Intent intent) {
+  static void checkForLinkEvent(Intent intent) {
     Log.i("deeplink", "deeplink: " + "---->checkForLinkEvent");
     if (intent.getAction().equals(Intent.ACTION_VIEW) && intent.getData() != null && intent.getData().getPath() != null) {
       new ErrorLogResult("deeplink").success("getIntent2");
@@ -202,7 +278,7 @@ public class FlutterMyNativePlugin implements MethodCallHandler, EventChannel.St
     }
   }
 
-  private void checkForPushEvent(Intent intent) {
+  static void checkForPushEvent(Intent intent) {
     Log.i("deeplink", "deeplink: " + "---->checkForPushEvent");
     Bundle bun = intent.getExtras();
     if (bun != null) {
@@ -212,7 +288,7 @@ public class FlutterMyNativePlugin implements MethodCallHandler, EventChannel.St
     }
   }
 
-  private void openFlutterRoute(final String url, final String f) {
+  static void openFlutterRoute(final String url, final String f) {
     Log.i("deeplink", "deeplink: " + "---->openFlutterRoute" + url);
     initialLink = new HashMap<String, String>();
     initialLink.put("uri", url);
@@ -221,12 +297,14 @@ public class FlutterMyNativePlugin implements MethodCallHandler, EventChannel.St
     timer.schedule(new TimerTask() {
       @Override
       public void run() {
-        Intent i = new Intent();
-        i.setAction(DeeplinkFilter);
-        i.putExtra("uri", url);
-        i.putExtra("fragment", f);
-        if (receiver != null) registrar.context().sendBroadcast(i);
-        timer.cancel();
+        if (myNativePlugin != null) {
+          Intent i = new Intent();
+          i.setAction(myNativePlugin.DeeplinkFilter);
+          i.putExtra("uri", url);
+          i.putExtra("fragment", f);
+          if (myNativePlugin.receiver != null) myNativePlugin.registrar.context().sendBroadcast(i);
+          timer.cancel();
+        }
       }
     }, 1000);
   }

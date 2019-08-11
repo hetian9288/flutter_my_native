@@ -41,10 +41,9 @@ public class QiniuUpload implements EventChannel.StreamHandler {
 
     public void upload(final MethodCall call, final Result result){
         this.isCancelled = false;
-        final String filepath = call.argument("filepath");
         final String key = call.argument("key");
         final String token = call.argument("token");
-        Log.e(TAG,filepath);
+        final String uploadType = call.argument("type");
 
         Configuration config = new Configuration.Builder()
                 .chunkSize(512 * 1024)        // 分片上传时，每片的大小。 默认256K
@@ -88,7 +87,14 @@ public class QiniuUpload implements EventChannel.StreamHandler {
             }
         });
 
-        uploadManager.put(filepath,key,token,upCompletionHandler,options);
+        if (uploadType.equals("path")) {
+            uploadManager.put((String)call.argument("filepath"),key,token,upCompletionHandler,options);
+        } else if (uploadType.equals("bytes")) {
+            uploadManager.put((byte[]) call.argument("bytes"),key,token,upCompletionHandler,options);
+        }else {
+            Log.e(TAG, "upload: 支持：path、bytes 上传类型");
+        }
+
     }
 
     public void cancelUpload(final Result result){

@@ -1,28 +1,49 @@
 #import "FlutterMyNativePlugin.h"
-#import <QiniuSDK.h>
+#import <Qiniu/QiniuSDK.h>
 #import <MobileCoreServices/MobileCoreServices.h>
 #import <Photos/Photos.h>
 #import <UIKit/UIKit.h>
+@import UserNotifications;
 
-@interface FlutterMyNativePlugin() <FlutterStreamHandler>
-
+@interface FlutterMyNativePlugin() <FlutterStreamHandler, UNUserNotificationCenterDelegate>
 @property BOOL isCanceled;
 @property FlutterEventSink eventSink;
-
+@property NSURL *deeplink;
 @end
 
 @implementation FlutterMyNativePlugin
+
++ (instancetype) sharedInstance
+{
+    static FlutterMyNativePlugin *instance = nil;
+    if (!instance) {
+        instance = [[FlutterMyNativePlugin alloc] init];
+    }
+    return instance;
+}
 
 + (void)registerWithRegistrar:(NSObject<FlutterPluginRegistrar>*)registrar {
     NSString *eventChannelName  = @"cn.cnganen.flutter_my_native.qiniu_upload_event";
     FlutterEventChannel *eventChannel = [FlutterEventChannel eventChannelWithName:eventChannelName binaryMessenger:registrar.messenger];
     
+    NSString *eventDeepLink = @"cn.cnganen.flutter_my_native.deeplink";
+    FlutterEventChannel *eventDeepLinkChannel = [FlutterEventChannel eventChannelWithName:eventDeepLink binaryMessenger:registrar.messenger];
+    
   FlutterMethodChannel* channel = [FlutterMethodChannel
       methodChannelWithName:@"cn.cnganen.flutter_my_native"
             binaryMessenger:[registrar messenger]];
-  FlutterMyNativePlugin* instance = [[FlutterMyNativePlugin alloc] init];
+  FlutterMyNativePlugin* instance = [FlutterMyNativePlugin sharedInstance];
   [registrar addMethodCallDelegate:instance channel:channel];
     [eventChannel setStreamHandler:instance];
+    [eventDeepLinkChannel setStreamHandler:instance];
+    [registrar addApplicationDelegate:instance];
+}
+
+- (BOOL)application:(UIApplication *)app openURL:(NSURL *)url options:(NSDictionary<UIApplicationOpenURLOptionsKey,id> *)options{
+    if ([url.scheme isEqualToString:@"ganengou"]) {
+        _deeplink = url;
+    }
+    return NO;
 }
 
 - (void)handleMethodCall:(FlutterMethodCall*)call result:(FlutterResult)result {
@@ -38,7 +59,7 @@
       
       //NSLog(@"fileData.data.length  :%ul",fileData.data.length);
       UIImage *image=[UIImage imageWithData:fileData.data];
-      
+
       UNAuthorizationOptions status = [PHPhotoLibrary authorizationStatus];
       if (status == PHAuthorizationStatusRestricted) {
           NSLog(@"not allow to access photo library");
@@ -60,6 +81,15 @@
       [self upload:call result:result];
   } else if ([@"cancelUpload" isEqualToString:call.method]) {
       [self cancelUpload:call result:result];
+  } else if ([@"getInitialLink" isEqualToString:call.method]) {
+      if (_deeplink != NULL) {
+          result(@{
+                   @"uri": [NSString stringWithFormat:@"%@?%@", _deeplink.path, _deeplink.query],
+                   @"fragment": _deeplink.fragment,
+                   });
+      }else {
+          result(@{});
+      }
   } else {
     result(FlutterMethodNotImplemented);
   }
@@ -131,12 +161,11 @@
 - (void)upload:(FlutterMethodCall*)call result:(FlutterResult)result{
     self.isCanceled = FALSE;
     
-    NSString *filepath = call.arguments[@"filepath"];
+//    NSString *filepath = call.arguments[@"filepath"];
     NSString *key = call.arguments[@"key"];
     NSString *token = call.arguments[@"token"];
-    
+    NSString *uploadType = call.arguments[@"type"];
     QNUploadOption *opt = [[QNUploadOption alloc] initWithMime:nil progressHandler:^(NSString *key, float percent) {
-        NSLog(@"progress %f",percent);
         self.eventSink(@{
                          @"key": key,
                          @"percent": @(percent),
@@ -146,11 +175,22 @@
     }];
     
     QNUploadManager *manager = [[QNUploadManager alloc] init];
-    [manager putFile:filepath key:key token:token complete:^(QNResponseInfo *info, NSString *key, NSDictionary *resp) {
-        NSLog(@"info %@", info);
-        NSLog(@"resp %@",resp);
-        result(@(info.isOK));
-    } option:(QNUploadOption *) opt];
+    if ([uploadType isEqualToString:@"path"]) {
+        NSString *filepath = call.arguments[@"filepath"];
+        [manager putFile:filepath key:key token:token complete:^(QNResponseInfo *info, NSString *key, NSDictionary *resp) {
+            NSLog(@"info %@", info);
+            NSLog(@"resp %@",resp);
+            result(@(info.isOK));
+        } option:(QNUploadOption *) opt];
+    } else if ([uploadType isEqualToString:@"bytes"]) {
+        FlutterStandardTypedData *bytes = [FlutterStandardTypedData typedDataWithBytes:call.arguments[@"bytes"]];
+        [manager putData:bytes.data key:key token:token complete:^(QNResponseInfo *info, NSString *key, NSDictionary *resp) {
+            NSLog(@"info %@", info);
+            NSLog(@"resp %@",resp);
+            result(@(info.isOK));
+        } option:(QNUploadOption *) opt];
+    }
+    
 }
 
 - (void)cancelUpload:(FlutterMethodCall*)call result:(FlutterResult)result{
@@ -170,4 +210,11 @@
     return nil;
 }
 
+- (void)onPush:( NSDictionary * __nullable)userInfo
+{
+    NSLog(@"归一： %@",userInfo);
+    if (userInfo[@"action"] != NULL) {
+        _deeplink = [[NSURL alloc] initWithString:[NSString stringWithFormat:@"ganengou://cn.cnganen.shop/%@?%@#push", userInfo[@"action"], userInfo[@"query"] == NULL ? @"" : userInfo[@"query"]]];
+    }
+}
 @end

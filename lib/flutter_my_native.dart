@@ -76,13 +76,12 @@ class FlutterMyNative {
   }
 
   // 避免错误使用时应用try包裹 捕获 FlutterError
-  static Future<String> saveFile({@required Uint8List fileData}) async {
-    assert(fileData != null);
-
+  static Future<String> saveFile({Uint8List fileData, String path}) async {
     String filePath = await _channel.invokeMethod(
       'saveFile',
       <String, dynamic>{
         'fileData': fileData,
+        "filePath": path,
       },
     );
     debugPrint("saved filePath:" + filePath);
@@ -139,14 +138,13 @@ class Deeplink {
 
 class Qiniu {
   static Stream _onChanged;
-  static Map<String, StreamController> _cache;
+  static Map<String, StreamController<double>> _cache;
   Qiniu() {
-    Qiniu._cache = Map<String, StreamController>();
+    Qiniu._cache = Map<String, StreamController<double>>();
     if (_onChanged == null) {
       _onChanged = FlutterMyNative._eventChannel.receiveBroadcastStream();
       _onChanged.listen((data){
-        print(data);
-        if (Qiniu._cache != null && data["key"] && Qiniu._cache.containsKey(data["key"])) {
+        if (Qiniu._cache != null && data["key"] != null && Qiniu._cache.containsKey(data["key"])) {
           if (Qiniu._cache[data["key"]].isClosed == false) {
             Qiniu._cache[data["key"]].add(data['percent']);
           }
@@ -155,7 +153,7 @@ class Qiniu {
     }
   }
   List<String> _keys = [];
-  Stream addOnChange(String key) {
+  Stream<double> addOnChange(String key) {
     Qiniu._cache[key] = StreamController();
     _keys.add(key);
     return Qiniu._cache[key].stream;
@@ -171,9 +169,14 @@ class Qiniu {
   ///上传
   ///
   /// key 保存到七牛的文件名
-  Future<bool> upload(String filepath, String token, String key) async {
+  Future<bool> uploadByPath(String filepath, String token, String key) async {
     var res = await FlutterMyNative._channel.invokeMethod('upload',
-            <String, String>{"filepath": filepath, "token": token, "key": key});
+            <String, String>{"filepath": filepath, "token": token, "key": key,  "type": "path"});
+    return res;
+  }
+
+  Future<bool> uploadByByte(List<int> bytes, String token, String key) async {
+    var res = await FlutterMyNative._channel.invokeMethod('upload',{"bytes": bytes, "token": token, "key": key, "type": "bytes"});
     return res;
   }
 

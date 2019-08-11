@@ -38,4 +38,6 @@ android {
 dependencies {
     api 'androidx.legacy:legacy-support-v4:1.0.0'
     implementation 'com.qiniu:qiniu-android-sdk:7.3.+'
+    //支付
+    implementation files('/Users/hetian9288/develop/flutterpor/ganengou/android/app/libs/alipaySdk-15.6.5.aar')
 }
