@@ -36,25 +36,32 @@ import io.flutter.plugin.common.MethodChannel.Result;
 import io.flutter.plugin.common.PluginRegistry;
 import io.flutter.plugin.common.PluginRegistry.Registrar;
 
+import javax.script.ScriptEngine;
+import javax.script.ScriptEngineManager;
+import javax.script.ScriptException;
+
 /** FlutterMyNativePlugin */
 public class FlutterMyNativePlugin implements MethodCallHandler, EventChannel.StreamHandler, PluginRegistry.NewIntentListener {
   @VisibleForTesting
   static final int FLUTTER_REQUEST_EXTERNAL_IMAGE_STORAGE_PERMISSION = 2344;
   private final PermissionManager permissionManager;
-  private final QiniuUpload qiniuUpload;
+//  private QiniuUpload qiniuUpload;
   private BroadcastReceiver receiver;
   private String DeeplinkFilter = "deeplinkFilter";
   static public HashMap<String, String> initialLink;
-  static private FlutterMyNativePlugin myNativePlugin;
+  static FlutterMyNativePlugin myNativePlugin;
+  static QiniuUpload qiniuUpload;
+  ScriptEngine engine;
   Registrar registrar;
   /** Plugin registration. */
   public static void registerWith(Registrar registrar) {
-    myNativePlugin = new FlutterMyNativePlugin(registrar, new QiniuUpload(registrar));
+    qiniuUpload = new QiniuUpload(registrar);
+    myNativePlugin = new FlutterMyNativePlugin(registrar);
     final MethodChannel channel = new MethodChannel(registrar.messenger(), "cn.cnganen.flutter_my_native");
     channel.setMethodCallHandler(myNativePlugin);
 
     EventChannel eventChannel = new EventChannel(registrar.messenger(), "cn.cnganen.flutter_my_native.qiniu_upload_event");
-    eventChannel.setStreamHandler(myNativePlugin.qiniuUpload);
+    eventChannel.setStreamHandler(qiniuUpload);
 
     EventChannel linkChannel = new EventChannel(registrar.messenger(), "cn.cnganen.flutter_my_native.deeplink");
     linkChannel.setStreamHandler(myNativePlugin);
@@ -89,10 +96,12 @@ public class FlutterMyNativePlugin implements MethodCallHandler, EventChannel.St
     void askForPermission(String permissionName, int requestCode);
   }
 
+  QiniuUpload getQiniuUpload() {
+    return qiniuUpload;
+  }
 
-  FlutterMyNativePlugin(final Registrar registrar, QiniuUpload qiniuUpload) {
+  FlutterMyNativePlugin(final Registrar registrar) {
     this.registrar = registrar;
-    this.qiniuUpload = qiniuUpload;
     permissionManager = new PermissionManager() {
       @Override
       public boolean isPermissionGranted(String permissionName) {
@@ -140,6 +149,9 @@ public class FlutterMyNativePlugin implements MethodCallHandler, EventChannel.St
       case "getInitialLink":
         getInitialLink(call, result);
         break;
+      case "runJavaScript":
+        runJavaScript(call, result);
+        break;
       default:
         result.notImplemented();
     }
@@ -167,6 +179,21 @@ public class FlutterMyNativePlugin implements MethodCallHandler, EventChannel.St
     }
   }
 
+  // 运行
+  void runJavaScript(MethodCall call, final Result result) {
+    final String jsCode = call.argument("jsCode");
+    ScriptEngineManager sem = new ScriptEngineManager();
+    if (engine == null) {
+      engine=sem.getEngineByName("javascript");
+    }
+    try {
+      result.success(engine.eval(jsCode).toString());
+    } catch (ScriptException e) {
+      result.success("");
+    }
+  }
+
+  // 支付宝授权
   void alipayAuto(MethodCall call, final Result result) {
     final String authInfo = call.argument("authInfo");
     if (authInfo.isEmpty()) {

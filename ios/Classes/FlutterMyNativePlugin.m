@@ -3,6 +3,7 @@
 #import <MobileCoreServices/MobileCoreServices.h>
 #import <Photos/Photos.h>
 #import <UIKit/UIKit.h>
+#import <JavaScriptCore/JavaScriptCore.h>
 @import UserNotifications;
 
 @interface FlutterMyNativePlugin() <FlutterStreamHandler, UNUserNotificationCenterDelegate>
@@ -46,13 +47,22 @@
     return NO;
 }
 
-- (void)handleMethodCall:(FlutterMethodCall*)call result:(FlutterResult)result {
+- (void) runJavaScript:(FlutterMethodCall*)call result:(FlutterResult)result
+{
+    JSContext *c = [[JSContext alloc] init];
+    result([[c evaluateScript:call.arguments[@"jsCode"]] toString]);
+}
+
+- (void)handleMethodCall:(FlutterMethodCall*)call result:(FlutterResult)result
+{
   if ([@"goToHome" isEqualToString:call.method]) {
     [self goToHome:call result:result];
   } else if ([@"hasOpen" isEqualToString:call.method]) {
       [self hasOpen:call result:result];
   } else if ([@"openNativeLink" isEqualToString:call.method]) {
       [self openNativeLink:call result:result];
+  } else if ([@"runJavaScript" isEqualToString:call.method]) {
+      [self runJavaScript:call result:result];
   } else if ([@"saveFile" isEqualToString:call.method]) {
       
       FlutterStandardTypedData* fileData = [call.arguments objectForKey:@"fileData"] ;

@@ -34,10 +34,16 @@ android {
     }
 
 }
-
+repositories {
+    flatDir {
+        dirs 'libs'
+    }
+}
 dependencies {
     api 'androidx.legacy:legacy-support-v4:1.0.0'
-    implementation 'com.qiniu:qiniu-android-sdk:7.3.+'
+    implementation 'com.qiniu:qiniu-android-sdk:7.3.15'
+    // 运行JS
+    implementation 'io.apisense:rhino-android:1.1.1'
     //支付
-    implementation files('/Users/hetian9288/develop/flutterpor/ganengou/android/app/libs/alipaySdk-15.6.5.aar')
+    compileOnly files('libs/alipaySdk-15.6.5.aar')
 }

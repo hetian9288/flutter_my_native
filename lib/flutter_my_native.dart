@@ -75,6 +75,10 @@ class FlutterMyNative {
     }
   }
 
+  static Future<dynamic> runJavascript({@required String code}) async {
+    return await _channel.invokeMethod("runJavaScript", {"jsCode": code});
+  }
+
   // 避免错误使用时应用try包裹 捕获 FlutterError
   static Future<String> saveFile({Uint8List fileData, String path}) async {
     String filePath = await _channel.invokeMethod(
